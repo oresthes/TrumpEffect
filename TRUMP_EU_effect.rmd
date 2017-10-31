@@ -1,0 +1,1092 @@
+---
+title: "Trump EU Effect."
+subtitle: "A transatlantic Prediction Model"
+geometry: margins=0.3in
+---
+
+
+###**INTRODUCTION**  
+
+#### This study has been carried out and presented by *Orest Allickoli* and *Hussam Almuayad* as the final project in the Data Mining class at the MScA program at the University of Chicago, taught by Prof. Anil Chaturvedi.
+&nbsp;
+
+The aim of this analysis is to try and predict populous tendencies in Europe.  
+The dataset has been acquired from kaggle https://www.kaggle.com/daliaresearch/trump-effect  
+The study has not been published on Kaggle because its engine was not capable of running this low intensity code from beginning to end uninterrupted.    
+In our possession are two sets of data, one for the US and one for EU.  
+The US data contains a question about the candidate elected in the Nov 2016 election whether that was Donald Trump, Hilary Clinton, another candidate or abstinence from voting.  
+In the EU dataset the subset of the *GB* Great Britain referred to as UK_set (with name variations) contains a question about the 2016 EU referendum whether an individual voted to leave, stay or abstain from voting.  
+The analysis is based on a number of assumption that individuals who voted for Donald Trump are similar or mimic those who voted for leaving EU.  
+The study is carried out in 6 steps overall with the first 4 steps pertaining to data homogenization and cleaning and the last two steps pertaining to the actual analysis and results.  
+Important Notes:   
+1- There are three major sets throughout the analysis. The UK_set, US_set and EU_set (containing EU countries except the UK).   
+2- all sets are subsetted so that only individuals who reported being residents are included in the study.  
+3- In the US set individuals who voted for Hilary are lumped with individuals who voted "Other candidate" for two reasons:
+  a- we only care if the vote is for a populist or not.    
+b- this makes the number levels match the UK levels of the vote on the referendum. 
+4- Variable selection: At step 4 we perform variable selection where we remove variables that 1) contain many **NA** values, 2) have different levels between the US_set and the EU_set or 3) that we thought are redundant.  This reduces the set from 68 variable to 44 and 48 (explained in item 5, next).    
+5- At step 4 we chose to divided the EU subest into two groups to be analyzed separately. The first containing only the 5 largest countries (in terms of number of observations). Those are 'DE','FR','ES','PL','IT'. The second set contains all EU countries with more than 100 observations in the survey. **The analysis is carried out ONLY for the 5 large countries** however the datasets are processed and ready for anyone who wishes to carry out further analysis.     
+It is important to understand the difference the difference between the sets with suffix **set_5c** and suffix **set_all**. The variables (columns, or questions) between those two sets are different. sets US_set_5c, UK_set_5c, and EU_set_5c contain 48 variables and are to be studied together, whereas sets US_set_all, UK_set_all and EU_set_all contain 44 variables are are to be studied together.   
+The reason for this dichotomy is due the fact that many questions from the survey remain unanswered for many of the smaller countries and those are reported as **NAs**. This is not true for the larger countries which have answered those questions. Hence the 5 countries have 48 columns vs 44 with the larger EU_set_all.    
+6- In step 5 **The analysis is carried out ONLY for the 5 large countries** using "US_set_5c", "UK_set_5c" and "EU_set_5c". Multinomial regression is estimated for the US and UK set and the predictive power of each set is assessed internally. The US model based on election is used to predict UK results of referendum and vice versa. Afterwards both the UK and US model are used to predict the populous tendencies in the 5 countries 'DE','FR','ES','PL','IT'. Details of model validation are included in the comments along with the code chunks.  
+In addition in this step we split the votes who abstained from voting into two groups to add a level of granularity that shows whether a no-vote has the tendency to vote populist or non-populist. The results are displayed in the same proportion tables.   
+7- In step 6 we carry out Classificataion tree models for the US set and the UK in an attempt to take a closer look at the factors that affected the vote selection.
+
+&nbsp;
+&nbsp;
+
+#######################################################################################################
+&nbsp;
+
+&nbsp;
+
+**Step 1: Data Homogenization**
+
+Summary:
+  The code in this file will take the raw datasets of EU (90 variables) and US (68 variables) and do the following:
+  1- Remove the column name prefixes (X.meta.., X.dem.. X.question.. etc)
+2- investigate the common variables between the EU_set and US_set. 
+3- modify any discrepancies in column names that refer to the same variable (only 1 case: ethnicity). 
+4- isolate -into a new dataset- the variables from EU dataset that are not common with the US (those are per country per party specific question). 
+5- remove from the EU_set the columns from step 4. 
+6- save the homogenized `EU_set.csv`, `US_set.csv`. 
+7- save `UK_set.csv` (a subset of EU_set) which contains a response and may be used for a prediction result
+8- save the `EU_set_uncommon.csv` set (of step 4). 
+9- finally we subset the datasets by observations that claim citizenship or who can vote. Those are the observations that matter and they constitute the majority.
+10- `voter_US_set.csv`, `voter_UK_set.csv` and `voter_EU_set.csv` are subsets of the `US_set.csv`, `UK_set.csv` and `EU_set.csv` where all observtions (individuals) are residents. Those are the people who voted or can vote.   
+------------------------------------------------------------------------------------------------------
+  The final EU_set is 67 columns wide.  
+The final US_set is 68 columns wide.   
+The `US_set` has one extra variable `vote_for_in_us_election` which serves as the response.  
+The `UK_set` has one extra variable `vote_referrendum` which is specific for the UK.   
+All other 67 columns are shared between the two sets.   
+------------------------------------------------------------------------------------------------------
+  
+
+```{r}  
+data_Path<-'d:/uchicago/msca31008/09 Project/Kaggle/data_files'
+save_Path<-'d:/uchicago/msca31008/09 Project/Kaggle'
+EU_set<-read.csv(paste(data_Path, 'data_coded_e28.csv - data_coded_e28.csv',sep='/'), header=TRUE, sep=',')
+US_set<-read.csv(paste(data_Path, 'data_coded_US.csv - data_coded_US.csv',sep='/'), header=TRUE, sep=',')
+dir.create(paste(save_Path,'results',sep='/'))
+result_Path<-paste(save_Path,'results',sep='/')
+```
+
+```{r}
+#Changing the name of the ethniticy variable in the `EU_set` from **X.dem..ethnic_background** to **X.dem..ethnicity**
+names(EU_set)[which(names(EU_set)=='X.dem..ethnic_background')]<-'X.dem..ethnicity'
+cbind(dim(EU_set), dim(US_set))
+
+
+#name clean up: in order to remove the prefixes
+
+trim_names<-function(dataset){
+  n<-dim(dataset)[2]
+  for(i in 1:n){
+    if (grepl('X.question..',names(dataset)[i])){
+      newname<-gsub('X.question..','',names(dataset)[i])
+      names(dataset)[i]<-newname
+    }
+    else if (grepl('X.dem..',names(dataset)[i])){
+      newname<-gsub('X.dem..','',names(dataset)[i])
+      names(dataset)[i]<-newname
+    }
+    else if (grepl('X.aud..',names(dataset)[i])){
+      newname<-gsub('X.aud..','',names(dataset)[i])
+      names(dataset)[i]<-newname
+    }
+    else if (grepl('X.meta..',names(dataset)[i])){
+      newname<-gsub('X.meta..','',names(dataset)[i])
+      names(dataset)[i]<-newname
+    }
+  }
+  return(dataset)
+}
+```
+
+```{r}
+#Creating (extracting) UK set: 
+UK_set<-EU_set[EU_set$X.dem..country_code=='GB',]
+
+#trimming all names:
+EU_set<-trim_names(EU_set)
+US_set<-trim_names(US_set)
+UK_set<-trim_names(UK_set)
+
+#Columns shared between the EU_set and US_set. 67 columns. Which is 1 column less than the entire US_set. 
+intersect(names(EU_set), names(US_set))
+
+#Columns in US_set not in EU_set. This it the regressor in the US_set.
+setdiff(names(US_set),names(EU_set))
+
+#Columns in EU_set and not in US_set. Those need to be removed from the main EU_set.
+setdiff(names(EU_set),names(US_set))
+#Columns in UK_set and not in US_set.
+setdiff(names(UK_set),names(US_set))
+
+EU_set_uncommon<-data.frame(EU_set[,which(names(EU_set) %in% setdiff(names(EU_set),names(US_set)))])
+EU_set_uncommon<-data.frame(cbind(uuid=EU_set$uuid,EU_set_uncommon))
+EU_set_uncommon$vote_referendum<-NULL  #this is part of the UK set and only applies to UK
+
+#choosing 
+EU_set[,which(names(EU_set) %in% setdiff(names(EU_set),names(US_set)))]<-NULL
+vote_referendum<-UK_set$vote_referendum
+UK_set[,which(names(UK_set) %in% setdiff(names(UK_set),names(US_set)))]<-NULL
+UK_set$vote_referendum<-vote_referendum
+
+
+
+#remove UK observarions from EU dataset
+EU_set<-EU_set[-which(EU_set$country_code=='GB'),]
+EU_set$country_code<-factor(EU_set$country_code)
+
+
+#saving data at this step
+write.csv(EU_set, paste(save_Path,'EU_set.csv',sep='/'))
+write.csv(US_set, paste(save_Path,'US_set.csv',sep='/'))
+write.csv(UK_set, paste(save_Path,'UK_set.csv',sep='/'))
+write.csv(EU_set_uncommon, paste(save_Path,'EU_set_uncommon.csv',sep='/'))
+
+
+#subset the data with observations who claim to be citizens of their respective counties (i.e those who can vote).
+voter_UK_set<-UK_set[UK_set$residency==1,]
+voter_EU_set<-EU_set[EU_set$residency==1,]
+voter_US_set<-US_set[US_set$residency==1,]
+
+
+
+#remove the residence columns from the corresponding datasets
+#remove country code from the UK and the US data.
+voter_US_set$residency<-NULL
+voter_US_set$country_code<-NULL
+
+voter_UK_set$residency<-NULL
+voter_UK_set$country_code<-NULL
+
+voter_EU_set$residency<-NULL
+
+
+#save the voter sets
+write.csv(voter_EU_set, paste(save_Path,'voter_EU_set.csv',sep='/'))
+write.csv(voter_US_set, paste(save_Path,'voter_US_set.csv',sep='/'))
+write.csv(voter_UK_set, paste(save_Path,'voter_UK_set.csv',sep='/'))
+```
+
+**End of Step 1**
+  
+**Step 2: Variable Modification**
+  
+  Summary:  
+  -Many questions have answers that contains multiple classes such as **social_networks_regularly_used**. Those question have answers where individuals included multipls answers which appear as "3 | 4 | 12 | 9 | 5".    
+-We proceed in this file by picking only the first value that appears in these observations.  
+-Starting at this point we are only concenred with the voter files `voter_US_set.csv`, `voter_UK_set.csv` and `voter_EU_set.csv`.   
+-At the end we prodice three files `clean_US_set.csv`, `clean_UK_set.csv` and `clean_EU_set.csv`.    
+
+```{r}
+library(stringr)
+
+#The following function will return a vector of column indexes that contain values of the form "3 | 4 | 6 | 1 | 0". 
+
+find_cols<-function(dataset){
+  n_col<-dim(dataset)[2]
+  n_row<-dim(dataset)[1]
+  target_col<-c()
+  #finding the columns where the piper character appears
+  for (i in 1:n_col){
+    for (j in 1:n_row){
+      if (grepl('\\|',as.character(dataset[j,i]))!=TRUE){
+      }
+      else{
+        target_col<-c(target_col, i)
+        break}
+      
+    }
+  }
+  return(target_col)  
+}
+
+
+#This function will extract the first value from observations containing multiple levels or multiple ranks in the following form 3|4|6|1|0. 
+
+extract_obs<-function(my_col){
+  my_col<-as.character(my_col)
+  new_col<-c()
+  n<-length(my_col)
+  for (i in 1:n){
+    if (isTRUE(my_col[i]=="")){
+      my_col[i]<-NA}
+    else{
+      obs<-str_replace_all(my_col[i],' ','')
+      obs<-strsplit(obs,'\\|')
+      my_col[i]<-obs[[1]][1]
+      
+    }
+  }
+  return(as.factor(my_col))
+}
+
+
+
+#This function returns a transformed dataset. 
+
+transform_set<-function(col_index,dataset){
+  n_col_index<-length(col_index)
+  for (i in 1:n_col_index){
+    dataset[,col_index[i]]<-extract_obs(dataset[,col_index[i]])
+  }
+  return(dataset)
+}
+
+
+
+
+#apply the find_cols() function
+col_index_eu<-find_cols(voter_EU_set)
+col_index_us<-find_cols(voter_US_set)
+col_index_uk<-find_cols(voter_UK_set)
+
+#applying the transform_set() function and producing new files.
+clean_EU_set<-transform_set(col_index_eu, voter_EU_set)
+clean_US_set<-transform_set(col_index_us, voter_US_set)
+clean_UK_set<-transform_set(col_index_uk, voter_UK_set)
+
+
+
+write.csv(clean_EU_set, paste(save_Path, 'clean_EU_set.csv', sep='/'))
+write.csv(clean_UK_set, paste(save_Path, 'clean_UK_set.csv', sep='/'))
+write.csv(clean_US_set, paste(save_Path, 'clean_US_set.csv', sep='/'))
+```
+
+**End of Step 2**
+  
+  
+  **Step 3: Variable Selection**
+  
+  Summary:  
+  -In this step we choose our variables that will undergo further analysis. It is important to understand what is done here to understand what countries the analysis and the results pertain to.    
+-We split the EU data `clean_EU_set` into two wide sets:   
+  -the first set contins 5 countries with the largest number of observations **'DE','FR','ES','PL','IT'**.    
+-the second set contins countries that have > 100 observations registered.   
+
+```{r}
+chosen_count_all<-table(clean_EU_set$country_code)
+#top 5 countries with the largest number of observations.
+chosen_count_5c<-c('DE','FR','ES','PL','IT')
+#countries with more than 100 observations in the dataset.
+chosen_count_all<-chosen_count_all[chosen_count_all>=100]
+
+
+library(dplyr)
+EU_set_all<-filter(clean_EU_set,country_code %in% names(chosen_count_all))
+EU_set_5c<-filter(clean_EU_set,country_code %in% chosen_count_5c)
+vec_discard_all<-c('origin',
+                   'employment_status_in_education',
+                   'organization_activities_timeperweek',
+                   'settlement_size',
+                   'hometown',
+                   'ethnicity',
+                   'hometown_change_past5years',
+                   'sharing_network_size',
+                   'social_networks_regularly_used',
+                   'social_media_activity_rank',
+                   'online_sharing_frequency',
+                   'media_print_hours',
+                   'media_tv_hours',
+                   'media_radio_hours',
+                   'frequency_of_voting',
+                   'frequent_sharing_of_politicalviews',
+                   'ranking_importance_of_issues_when_voting',
+                   'preferred_type_of_political_leader',
+                   'member_organization',
+                   'important_issues_when_voting',
+                   'vote_next_national_election')
+
+vec_discard_5c<-c('origin',
+                  'employment_status_in_education',
+                  'organization_activities_timeperweek',
+                  'settlement_size',
+                  'hometown',
+                  'ethnicity',
+                  'hometown_change_past5years',
+                  'sharing_network_size',
+                  #'social_networks_regularly_used',
+                  'social_media_activity_rank',
+                  'online_sharing_frequency',
+                  'media_print_hours',
+                  #'media_tv_hours',
+                  'media_radio_hours',
+                  'frequency_of_voting',
+                  'frequent_sharing_of_politicalviews',
+                  'ranking_importance_of_issues_when_voting',
+                  #'preferred_type_of_political_leader',
+                  'member_organization',
+                  #'important_issues_when_voting'
+                  'vote_next_national_election')
+
+
+
+EU_set_all<-clean_EU_set[,-which(names(clean_EU_set) %in% vec_discard_all)]
+table(EU_set_all$country_code,complete.cases(EU_set_all))
+
+EU_set_5c<-clean_EU_set[,-which(names(clean_EU_set) %in% vec_discard_5c)]
+table(EU_set_5c$country_code,complete.cases(EU_set_5c))
+
+US_set_5c<-clean_US_set[,-which(names(clean_US_set) %in% vec_discard_5c)]
+table(complete.cases(US_set_5c))
+
+US_set_all<-clean_US_set[,-which(names(clean_US_set) %in% vec_discard_all)]
+table(complete.cases(US_set_all))
+
+UK_set_5c<-clean_UK_set[,-which(names(clean_UK_set) %in% vec_discard_5c)]
+table(complete.cases(UK_set_5c))
+
+UK_set_all<-clean_UK_set[,-which(names(clean_UK_set) %in% vec_discard_all)]
+table(complete.cases(UK_set_all))
+
+
+EU_list<-list(EU_set_5c=EU_set_5c, EU_set_all=EU_set_all)
+US_list<-list(US_set_5c=US_set_5c, US_set_all=US_set_all)
+UK_list<-list(UK_set_5c=UK_set_5c, UK_set_all=UK_set_all)
+
+saveRDS(EU_list, paste(save_Path, 'EU_list.rds', sep='/'))
+saveRDS(US_list, paste(save_Path, 'US_list.rds', sep='/'))
+saveRDS(UK_list, paste(save_Path, 'UK_list.rds', sep='/'))
+```
+
+**End of Step 3**
+  
+  
+  **Step 4: Factor relabeling**
+  
+```{r}
+EU_set_5c<-EU_list$EU_set_5c
+EU_set_all<-EU_list$EU_set_all
+
+US_set_5c<-US_list$US_set_5c
+US_set_all<-US_list$US_set_all
+
+UK_set_5c<-UK_list$UK_set_5c
+UK_set_all<-UK_list$UK_set_all
+
+suppressMessages(library(dplyr))
+
+relabel_column <- function(col_name, dat, metadata) {
+  label_names <- as.character(filter(metadata, q_id_reduced == col_name)$value)
+  return(factor(dat[,col_name], labels = label_names))
+}
+
+
+#The function would be applied on a loop to the selected columns. 
+
+relabel_frame <- function(col_range, dat, metadata) {
+  res <- dat
+  col_names <- colnames(dat)[col_range]
+  for (col_name in col_names) {res[,col_name] <- relabel_column(col_name, dat,metadata)}
+  return(res)
+}
+
+
+
+metadata<-read.csv(paste(data_Path,'codebook.csv',sep='/'))
+metadata$q_id_reduced <- sapply(strsplit(as.character(metadata$question_id_mapped)," "),'[',2)
+
+new_frame<-relabel_frame(col_range = 7:49,EU_set_5c,metadata)
+new_frame[,1:2]<-NULL
+EU_set_5c<-new_frame
+new_frame<-relabel_frame(col_range = 7:45,EU_set_all,metadata)
+new_frame[,1:2]<-NULL
+EU_set_all<-new_frame
+EU_list$EU_set_5c<-EU_set_5c[,-c(1:2)]
+EU_list$EU_set_all<-EU_set_all[,-c(1:2)]
+
+
+#In the question **vote_for_in_us_election** we absorb the level of "Hilary Clinton" into the "Other candidate".  
+#The final levels for this question will be three "Donald Trump", "Other candidate" and "I did not vote". 
+#We also reorder the levels in the vector for convenience.  
+
+metadata<-read.csv(paste(data_Path,'codebook.csv',sep='/'))
+metadata$q_id_reduced <- sapply(strsplit(as.character(metadata$question_id_mapped)," "),'[',2)
+
+new_frame<-relabel_frame(col_range = 6:49,US_set_5c,metadata)
+new_frame[,1:2]<-NULL
+US_set_5c<-new_frame
+#for the 5 country US set
+US_set_5c$vote_for_in_us_election[US_set_5c$vote_for_in_us_election=='Hillary Clinton']<-'Other candidate'
+US_set_5c$vote_for_in_us_election<-factor(US_set_5c$vote_for_in_us_election, levels=c('Donald Trump','I did not vote','Other candidate' ))
+
+new_frame<-relabel_frame(col_range = 6:45,US_set_all,metadata)
+new_frame[,1:2]<-NULL
+US_set_all<-new_frame
+#for the all country US set.
+US_set_all$vote_for_in_us_election[US_set_all$vote_for_in_us_election=='Hillary Clinton']<-'Other candidate'
+US_set_all$vote_for_in_us_election<-factor(US_set_all$vote_for_in_us_election, levels=c('Donald Trump','I did not vote','Other candidate' ))
+US_list$US_set_5c<-US_set_5c[,-c(1:2)]
+US_list$US_set_all<-US_set_all[,-c(1:2)]
+
+
+#we also reorder the levels of the UK referrendum  
+
+metadata<-read.csv(paste(data_Path,'codebook.csv',sep='/'))
+metadata$value<-trimws(metadata$value)
+metadata$q_id_reduced<-sapply(strsplit(as.character(metadata$question_id_mapped)," "),'[',2)
+
+new_frame<-relabel_frame(col_range = 6:49,UK_set_5c,metadata)
+new_frame[,1:2]<-NULL
+UK_set_5c<-new_frame
+UK_set_5c$vote_referendum<-factor(UK_set_5c$vote_referendum, levels=c("For the UK to leave the EU","I did not vote","For the UK to stay in the EU"))
+
+new_frame<-relabel_frame(col_range = 6:45,UK_set_all,metadata)
+new_frame[,1:2]<-NULL
+UK_set_all<-new_frame
+UK_set_all$vote_referendum<-factor(UK_set_all$vote_referendum, levels=c("For the UK to leave the EU","I did not vote","For the UK to stay in the EU"))
+
+UK_list$UK_set_5c<-UK_set_5c[,-c(1:2)]
+UK_list$UK_set_all<-UK_set_all[,-c(1:2)]
+
+saveRDS(US_list, paste(save_Path, 'ready_US_list.rds', sep='/'))
+saveRDS(UK_list, paste(save_Path, 'ready_UK_list.rds', sep='/'))
+saveRDS(EU_list, paste(save_Path, 'ready_EU_list.rds', sep='/'))
+```
+```{r}  
+data_Path<-'d:/uchicago/msca31008/09 Project/Kaggle/data_files'
+save_Path<-'d:/uchicago/msca31008/09 Project/Kaggle'
+result_Path<-paste(save_Path,'results',sep='/')
+```
+
+```{r,echo=FALSE}
+US_predicted_results_t_fwd<-readRDS(paste(result_Path, 'US_predicted_results_t_fwd.rds', sep='/'))
+US_predicted_results_h_fwd<-readRDS(paste(result_Path,  'US_predicted_results_h_fwd.rds', sep='/'))
+
+US_saved_model_null<-readRDS(paste(result_Path,'US_saved_model_null.rds',sep='/'))
+US_saved_model_full<-readRDS(paste(result_Path, 'US_saved_model_full.rds',sep='/'))
+US_saved_model_fwd<- readRDS(paste(result_Path, 'US_saved_model_fwd.rds',sep='/'))
+
+overall_fwd_step_US<-readRDS(paste(result_Path,'overall_fwd_step_US.rds',sep='/'))
+
+UK_predicted_results_t_fwd<-readRDS(paste(save_Path, 'UK_predicted_results_t_fwd.rds', sep='/'))
+UK_predicted_results_h_fwd<-readRDS(paste(save_Path, 'UK_predicted_results_h_fwd.rds', sep='/'))
+
+UK_predicted_results_t_both<-readRDS(paste(save_Path, 'UK_predicted_results_t_both.rds', sep='/'))
+UK_predicted_results_h_both<-readRDS(paste(save_Path, 'UK_predicted_results_h_both.rds', sep='/'))
+
+UK_saved_model_null<-readRDS(paste(result_Path,'UK_saved_model_null.rds',sep='/'))
+UK_saved_model_full<-readRDS(paste(result_Path,'UK_saved_model_full.rds',sep='/'))
+UK_saved_model_fwd<-readRDS(paste(result_Path,'UK_saved_model_fwd.rds',sep='/'))
+UK_saved_model_both<-readRDS(paste(result_Path,'UK_saved_model_both.rds',sep='/'))
+overall_fwd_step_UK<-readRDS(paste(save_Path, 'overall_fwd_step_UK.rds', sep='/'))
+```
+
+**End of Step 4**
+
+**Step 5: Multinomial regression** 
+
+In this step we perform the following operations: 
+**US set**   
+1- Create 10 different pairs of training and holdout subsets divided 80/20   
+2- Run a forward step function on each training subset   
+3- Using the resulting models we predict the training subset and the adjoining testing subset and plot the results.  
+4- Create an overall forward model using all 1008 datapoints of the US_set.   
+
+**UK set**   
+1- Create 10 different pairs of training and holdout subsets divided 70/30 (larger number of observations with UK set)   
+2- Run a forward step function and both [forward and backward] step function on each training subset   
+3- Using the resulting models we predict the training subset and the adjoining testing subset and plot the results.   
+4- Create an overall forward model(only) using all 1358 datapoints of the UK_set.   
+
+Perform a transAtlantic prediction by attempting to predict US election results using Brexit forward model and Brexit results using US election model.   
+
+Finally, extract the observations of 5 countries from the the EU_set_5c and attempt to predict populous vs. non-populous election results based on the US election model and the UK election model. Note that we also split the non-voters into those who swing to the populous vote and those who swing to a non-populous vote for a more complete picture.  
+
+```{r, eval=FALSE}
+set.seed(49851254)
+US_set_5c<-ready_US_list$US_set_5c
+list_names<-c(1:10)
+t_sets<-vector('list', length=10)
+h_sets<-vector('list', length=10)
+for (i in 1:10){
+  N<-dim(US_set_5c)[1]
+  k<-dim(US_set_5c)[2]
+  selector<-(sample(c(1,0),N,replace=TRUE, prob=c(.8,.2)))
+  count<-0
+  while (count<100000){
+    temp<-sample(selector,N,replace=FALSE)
+    count<-count+1
+  }
+  selector<-temp
+  US_set_5c$selector<-selector
+  US_set_5c_h<-US_set_5c[US_set_5c$selector==FALSE,]
+  US_set_5c_t<-US_set_5c[US_set_5c$selector==TRUE,]
+  #remove selector column
+  US_set_5c_t$selector<-NULL
+  US_set_5c_h$selector<-NULL
+  US_set_5c$selector<-NULL
+  
+  t_sets[[i]]<-US_set_5c_t
+  h_sets[[i]]<-US_set_5c_h
+}
+saveRDS(t_sets,paste(result_Path,'US_t_sets.rds',sep='/'))
+saveRDS(h_sets,paste(result_Path,'US_h_sets.rds',sep='/'))
+```
+
+```{r,eval=FALSE}
+US_predicted_results_t_fwd<-vector('list', length=10)
+US_predicted_results_h_fwd<-vector('list', length=10)
+US_saved_model_fwd<-vector('list',length=10)
+US_saved_model_null<-vector('list',length=10)
+US_saved_model_full<-vector('list', length=10)
+
+for (i in 1:10){
+  null_model<-nnet::multinom(vote_for_in_us_election~1, data=t_sets[[i]], MaxNWts=1000)
+  full_model<-nnet::multinom(vote_for_in_us_election~., data=t_sets[[i]], MaxNWts=1000, maxit=1000)
+  
+  fwd_step<-step(null_model, scop=list(lower=null_model, upper=full_model), direction='forward', trace=0)
+  
+  predict_training<-predict(fwd_step, type='probs')
+  index_t<-apply(predict_training, 1, function(x) which.max(x))
+  US_predicted_results_t_fwd[[i]]<-data.frame(predicted_t=index_t, actual=t_sets[[i]]$vote_for_in_us_election)
+  
+  predict_holdout<-predict(fwd_step, newdata=h_sets[[i]],type='probs')
+  index_h<-apply(predict_holdout, 1, function(x) which.max(x))
+  US_predicted_results_h_fwd[[i]]<-data.frame(predicted_h=index_h, actual=h_sets[[i]]$vote_for_in_us_election)
+  
+  US_saved_model_null[[i]]<-null_model
+  US_saved_model_full[[i]]<-full_model
+  US_saved_model_fwd[[i]]<-fwd_step
+} 
+
+saveRDS(US_predicted_results_t_fwd, paste(result_Path, 'US_predicted_results_t_fwd.rds', sep='/'))
+saveRDS(US_predicted_results_h_fwd, paste(result_Path, 'US_predicted_results_h_fwd.rds', sep='/'))
+saveRDS(US_saved_model_null, paste(result_Path,'US_saved_model_null.rds',sep='/'))
+saveRDS(US_saved_model_full, paste(result_Path,'US_saved_model_full.rds',sep='/'))
+saveRDS(US_saved_model_fwd, paste(result_Path,'US_saved_model_fwd.rds',sep='/'))
+```
+
+```{r}
+#US training set predictive power 
+##################################
+Predicting_Trump_t<-c()
+Predicting_Trump_h<-c()
+for (i in 1:10){
+  Predicting_Trump_t<-c(Predicting_Trump_t, round(prop.table(table(US_predicted_results_t_fwd[[i]]),2),3)[1,1])
+  Predicting_Trump_h<-c(Predicting_Trump_h, round(prop.table(table(US_predicted_results_h_fwd[[i]]),2),3)[1,1])
+}
+
+
+plot(c(1:10), Predicting_Trump_t, col='red',ylim=c(0.2,1), type='l',ylab='Predicting Trump Win',xlab='Random set', sub='Figure 1', main='US set holdout validation')
+lines(c(1:10), Predicting_Trump_h, col='blue')
+points(c(1:10), Predicting_Trump_t, col='red',pch=20)
+points(c(1:10), Predicting_Trump_h, col='blue',pch=20)
+legend('bottomright', col=c('red','blue'), c('training','holdout'), pch=c(20,20))
+```
+
+US_predicted_results_t_fwd<-readRDS(paste(result_Path))
+
+```{r,eval=FALSE}
+#Building an overall US model based on the forward step model
+############################################################
+
+overall_null_model_US<-nnet::multinom(vote_for_in_us_election~1, US_set_5c, MaxNWts=1000)
+overall_full_model_US<-nnet::multinom(vote_for_in_us_election~., US_set_5c, MaxNWts=1000, maxit=1000)
+
+overall_fwd_step_US<-step(overall_null_model_US, scop=list(lower=overall_null_model_US, upper=overall_full_model_US), direction='forward', trace=0)
+saveRDS(overall_fwd_step_US,paste(result_Path,'overall_fwd_step_US.rds',sep='/'))
+```
+
+```{r, eval=FALSE}
+#UK Study
+########
+
+set.seed(49851254)
+UK_set_5c<-ready_UK_list$UK_set_5c
+list_names<-c(1:10)
+UK_t_sets<-vector('list', length=10)
+UK_h_sets<-vector('list', length=10)
+for (i in 1:10){
+  N<-dim(UK_set_5c)[1]
+  k<-dim(UK_set_5c)[2]
+  selector<-(sample(c(1,0),N,replace=TRUE, prob=c(.7,.3)))
+  count<-0
+  while (count<100000){
+    temp<-sample(selector,N,replace=FALSE)
+    count<-count+1
+  }
+  selector<-temp
+  UK_set_5c$selector<-selector
+  UK_set_5c_h<-UK_set_5c[UK_set_5c$selector==FALSE,]
+  UK_set_5c_t<-UK_set_5c[UK_set_5c$selector==TRUE,]
+  #remove selector column
+  UK_set_5c_t$selector<-NULL
+  UK_set_5c_h$selector<-NULL
+  UK_set_5c$selector<-NULL
+  
+  UK_t_sets[[i]]<-UK_set_5c_t
+  UK_h_sets[[i]]<-UK_set_5c_h
+}
+saveRDS(UK_t_sets,paste(result_Path,'UK_t_sets.rds',sep='/'))
+saveRDS(UK_h_sets,paste(result_Path,'UK_h_sets.rds',sep='/'))
+```
+
+```{r,eval=FALSE}
+UK_predicted_results_t_fwd<-vector('list', length=10)
+UK_predicted_results_h_fwd<-vector('list', length=10)
+UK_predicted_results_t_both<-vector('list', length=10)
+UK_predicted_results_h_both<-vector('list', length=10)
+
+UK_saved_model_null<-vector('list',length=10)
+UK_saved_model_full<-vector('list',length=10)
+UK_saved_model_fwd<-vector('list',length=10)
+UK_saved_model_both<-vector('list',length=10)
+
+for (i in 1:10){
+  UK_null_model<-nnet::multinom(vote_referendum~1, data=UK_t_sets[[i]], MaxNWts=1000)
+  UK_full_model<-nnet::multinom(vote_referendum~., data=UK_t_sets[[i]], MaxNWts=1000, maxit=1000)
+  
+  ######################### Fowrard Model  
+  fwd_step<-step(UK_null_model,scop=list(lower=UK_null_model, upper=UK_full_model), direction='forward', trace=0)
+  
+  UK_predict_training_fwd<-predict(fwd_step, type='probs')
+  UK_index_t_fwd<-apply(UK_predict_training_fwd, 1, function(x) which.max(x))
+  UK_predicted_results_t_fwd[[i]]<-data.frame(UK_predicted_t=UK_index_t_fwd, actual=UK_t_sets[[i]]$vote_referendum)
+  
+  UK_predict_holdout_fwd<-predict(fwd_step, newdata=UK_h_sets[[i]],type='probs')
+  UK_index_h_fwd<-apply(UK_predict_holdout_fwd, 1, function(x) which.max(x))
+  UK_predicted_results_h_fwd[[i]]<-data.frame(UK_predicted_h=UK_index_h_fwd, actual=UK_h_sets[[i]]$vote_referendum)
+  
+  UK_saved_model_fwd[[i]]<-fwd_step
+  
+  ######################### Both Model (forward and backward)
+  both_step<-step(UK_null_model, scop=list(upper=UK_full_model), direction='both', trace=0)
+  
+  UK_predict_training_both<-predict(both_step, type='probs')
+  UK_index_t_both<-apply(UK_predict_training_both, 1, function(x) which.max(x))
+  UK_predicted_results_t_both[[i]]<-data.frame(UK_predicted_t=UK_index_t_both, actual=UK_t_sets[[i]]$vote_referendum)
+  
+  UK_predict_holdout_both<-predict(both_step, newdata=UK_h_sets[[i]],type='probs')
+  UK_index_h_both<-apply(UK_predict_holdout_both, 1, function(x) which.max(x))
+  UK_predicted_results_h_both[[i]]<-data.frame(UK_predicted_h=UK_index_h_both, actual=UK_h_sets[[i]]$vote_referendum)
+  
+  UK_saved_model_both[[i]]<-both_step
+  
+  UK_saved_model_null[[i]]<-UK_null_model
+  UK_saved_model_full[[i]]<-UK_full_model
+}
+
+saveRDS(UK_predicted_results_t_fwd, paste(save_Path, 'UK_predicted_results_t_fwd.rds', sep='/'))
+saveRDS(UK_predicted_results_h_fwd, paste(save_Path, 'UK_predicted_results_h_fwd.rds', sep='/'))
+
+saveRDS(UK_predicted_results_t_both, paste(save_Path, 'UK_predicted_results_t_both.rds', sep='/'))
+saveRDS(UK_predicted_results_h_both, paste(save_Path, 'UK_predicted_results_h_both.rds', sep='/'))
+
+saveRDS(UK_saved_model_null, paste(result_Path,'UK_saved_model_null.rds',sep='/'))
+saveRDS(UK_saved_model_full, paste(result_Path,'UK_saved_model_full.rds',sep='/'))
+saveRDS(UK_saved_model_fwd, paste(result_Path,'UK_saved_model_fwd.rds',sep='/'))
+saveRDS(UK_saved_model_both, paste(result_Path,'UK_saved_model_both.rds',sep='/'))
+```
+
+
+```{r}
+Predicting_Brexit_t_fwd<-c()
+Predicting_Brexit_h_fwd<-c()
+for (i in 1:10){
+  Predicting_Brexit_t_fwd<-c(Predicting_Brexit_t_fwd,round(prop.table(table(UK_predicted_results_t_fwd[[i]]),2),3)[1,1])
+  Predicting_Brexit_h_fwd<-c(Predicting_Brexit_h_fwd,round(prop.table(table(UK_predicted_results_h_fwd[[i]]),2),3)[1,1])
+}
+
+plot(c(1:10), Predicting_Brexit_t_fwd, col='red',ylim=c(0.2,1), type='l',ylab='Predicting Brexit',xlab='Random set', sub='Figure 2', main='UK set holdout validation Forward Model')
+lines(c(1:10), Predicting_Brexit_h_fwd, col='blue')
+points(c(1:10), Predicting_Brexit_t_fwd, col='red',pch=20)
+points(c(1:10), Predicting_Brexit_h_fwd, col='blue',pch=20)
+legend('bottomright', col=c('red','blue'), c('training','holdout'), pch=c(20,20))
+```
+
+
+```{r}
+Predicting_Brexit_t_both<-c()
+Predicting_Brexit_h_both<-c()
+for (i in 1:10){
+  Predicting_Brexit_t_both<-c(Predicting_Brexit_t_both,round(prop.table(table(UK_predicted_results_t_both[[i]]),2),3)[1,1])
+  Predicting_Brexit_h_both<-c(Predicting_Brexit_h_both,round(prop.table(table(UK_predicted_results_h_both[[i]]),2),3)[1,1])
+}
+
+plot(c(1:10), Predicting_Brexit_t_both, col='red',ylim=c(0.2,1), type='l',ylab='Predicting Brexit',xlab='Random set', sub='Figure 3', main='UK set holdout validation Both Model')
+lines(c(1:10), Predicting_Brexit_h_both, col='blue')
+points(c(1:10), Predicting_Brexit_t_both, col='red',pch=20)
+points(c(1:10), Predicting_Brexit_h_both, col='blue',pch=20)
+legend('bottomright', col=c('red','blue'), c('training','holdout'), pch=c(20,20))
+```
+
+
+```{r,eval=FALSE}
+#Building an overall UK model based on the forward step model
+############################################################
+
+overall_null_model_UK<-nnet::multinom(vote_referendum~1, UK_set_5c, MaxNWts=1000)
+overall_full_model_UK<-nnet::multinom(vote_referendum~., UK_set_5c, MaxNWts=1000, maxit=1000)
+
+overall_fwd_step_UK<-step(overall_null_model_UK, scop=list(lower=overall_null_model_UK, upper=overall_full_model_UK), direction='forward', trace=0)
+saveRDS(overall_fwd_step_UK, paste(save_Path, 'overall_fwd_step_UK.rds', sep='/'))
+```
+
+
+```{r}
+#Predicting the UK referendum from the US election model
+############################################################
+library(nnet)
+predicting_referrendum<-predict(overall_fwd_step_US, newdata=UK_set_5c, type='probs')
+index_referrendum<-apply(predicting_referrendum, 1, function(x) which.max(x))
+actual_referrendum<-UK_set_5c$vote_referendum
+prop.table(table(predicted=index_referrendum,actual=actual_referrendum),2)
+```
+
+
+```{r,eval=FALSE}
+#Predicting the US election from the UK referendum model
+############################################################
+library(nnet)
+predicting_election<-predict(overall_fwd_step_UK, newdata=US_set_5c, type='probs')
+index_election<-apply(predicting_election, 1, function(x) which.max(x))
+actual_election<-US_set_5c$vote_for_in_us_election
+prop.table(table(predicted=index_election,actual=actual_election),2)
+```
+
+```{r}
+#EU 5 countries results prediction
+##################################
+
+table(EU_set_5c$country_code)
+
+#EU_set_5c$household_finances_past12months<-factor(EU_set_5c$household_finances_past12months, levels=c("a lot worse","a little better","a little worse","a lot better","Don't know","the same"))
+#Germany
+DE_set<-EU_set_5c[EU_set_5c$country_code=='DE',]
+DE_set$country_code<-NULL
+#France
+FR_set<-EU_set_5c[EU_set_5c$country_code=='FR',]
+FR_set$country_code<-NULL
+#Italy
+IT_set<-EU_set_5c[EU_set_5c$country_code=='IT',]
+IT_set$country_code<-NULL
+#Poland
+PL_set<-EU_set_5c[EU_set_5c$country_code=='PL',]
+PL_set$country_code<-NULL
+#Spain
+ES_set<-EU_set_5c[EU_set_5c$country_code=='ES',]
+ES_set$country_code<-NULL
+```
+
+```{r}
+#US election Predicting UK Brexit
+#################################
+round(prop.table(table(predicted_UK_ref=predict(overall_fwd_step_US, newdata = UK_set_5c),actual=UK_set_5c$vote_referendum),2),3)
+
+#UK Brexit Predicting US election
+#################################
+round(prop.table(table(predicted_US_elec=predict(overall_fwd_step_UK, newdata = US_set_5c),actual=US_set_5c$vote_for_in_us_election),2),3)
+
+#Using both US election and UK Brexit model as predictors:
+
+#DE Predictions
+##############
+
+data.frame(rbind(
+  DE_UK_predictor=round(prop.table(table(factor(apply(predict(overall_fwd_step_UK,newdata=DE_set,type='probs'),1, function(x) which.max(x)),labels=c('populist','no vote','non-populist')))),3),
+  DE_US_predictor=round(prop.table(table(factor(apply(na.omit(predict(overall_fwd_step_US,newdata=DE_set,type='probs')),1, function(x) which.max(x)),labels=c('populist','no vote','non-populist')))),3)
+))
+
+
+#swing populist and swing non-populist
+
+result_1<-apply(predict(overall_fwd_step_UK,newdata=DE_set,type='probs'), 1,function(voter) {
+  res<-which.max(voter)
+  if(res == 2){ res<-10*which.max(voter[-2])}
+  return(res)
+})
+result_2<-apply(na.omit(predict(overall_fwd_step_US,newdata=DE_set,type='probs')), 1,function(voter) {
+  res<-which.max(voter)
+  if(res == 2){ res<-10*which.max(voter[-2])}
+  return(res)
+})
+data.frame(rbind(
+  DE_UK_predictor=round(prop.table(table(factor(result_1,levels=c(1,10,20,3),labels=c("populist","swing populist","swing non-populist","non-populist")))),3),
+  DE_US_predictor=round(prop.table(table(factor(result_2, levels=c(1,10,20,3),labels=c("populist","swing populist","swing non-populist","non-populist")))),3)
+))
+```
+
+
+```{r}
+#FR Predictions
+###############
+
+data.frame(rbind(
+  FR_UK_predictor=round(prop.table(table(factor(apply(predict(overall_fwd_step_UK,newdata=FR_set,type='probs'),1, function(x) which.max(x)),labels=c('populist','no vote','non-populist')))),3),
+  FR_US_predictor=round(prop.table(table(factor(apply(na.omit(predict(overall_fwd_step_US,newdata=FR_set,type='probs')),1, function(x) which.max(x)),labels=c('populist','no vote','non-populist')))),3)
+))
+
+#swing populist and swing non-populist
+
+result_1<-apply(predict(overall_fwd_step_UK,newdata=FR_set,type='probs'), 1,function(voter) {
+  res<-which.max(voter)
+  if(res == 2){ res<-10*which.max(voter[-2])}
+  return(res)
+})
+result_2<-apply(na.omit(predict(overall_fwd_step_US,newdata=FR_set,type='probs')), 1,function(voter) {
+  res<-which.max(voter)
+  if(res == 2){ res<-10*which.max(voter[-2])}
+  return(res)
+})
+data.frame(rbind(
+  FR_UK_predictor=round(prop.table(table(factor(result_1,levels=c(1,10,20,3),labels=c("populist","swing populist","swing non-populist","non-populist")))),3),
+  FR_US_predictor=round(prop.table(table(factor(result_2, levels=c(1,10,20,3),labels=c("populist","swing populist","swing non-populist","non-populist")))),3)
+))
+```
+
+```{r}
+#PL Predictions
+###############
+
+data.frame(rbind(
+  PL_UK_predictor=round(prop.table(table(factor(apply(predict(overall_fwd_step_UK,newdata=PL_set,type='probs'),1, function(x) which.max(x)),labels=c('populist','no vote','non-populist')))),3),
+  PL_US_predictor=round(prop.table(table(factor(apply(na.omit(predict(overall_fwd_step_US,newdata=PL_set,type='probs')),1, function(x) which.max(x)),labels=c('populist','no vote','non-populist')))),3)
+))
+
+
+#swing populist and swing non-populist
+
+result_1<-apply(predict(overall_fwd_step_UK,newdata=PL_set,type='probs'), 1,function(voter) {
+  res<-which.max(voter)
+  if(res == 2){ res<-10*which.max(voter[-2])}
+  return(res)
+})
+result_2<-apply(na.omit(predict(overall_fwd_step_US,newdata=PL_set,type='probs')), 1,function(voter) {
+  res<-which.max(voter)
+  if(res == 2){ res<-10*which.max(voter[-2])}
+  return(res)
+})
+data.frame(rbind(
+  PL_UK_predictor=round(prop.table(table(factor(result_1,levels=c(1,10,20,3),labels=c("populist","swing populist","swing non-populist","non-populist")))),3),
+  PL_US_predictor=round(prop.table(table(factor(result_2, levels=c(1,10,20,3),labels=c("populist","swing populist","swing non-populist","non-populist")))),3)
+))
+```
+
+
+```{r}
+#ES Predictions
+###############
+
+data.frame(rbind(
+  ES_UK_predictor=round(prop.table(table(factor(apply(predict(overall_fwd_step_UK,newdata=ES_set,type='probs'),1, function(x) which.max(x)),labels=c('populist','no vote','non-populist')))),3),
+  ES_US_predictor=round(prop.table(table(factor(apply(na.omit(predict(overall_fwd_step_US,newdata=ES_set,type='probs')),1, function(x) which.max(x)),labels=c('populist','no vote','non-populist')))),3)
+))
+
+
+#swing populist and swing non-populist
+
+result_1<-apply(predict(overall_fwd_step_UK,newdata=ES_set,type='probs'), 1,function(voter) {
+  res<-which.max(voter)
+  if(res == 2){ res<-10*which.max(voter[-2])}
+  return(res)
+})
+result_2<-apply(na.omit(predict(overall_fwd_step_US,newdata=ES_set,type='probs')), 1,function(voter) {
+  res<-which.max(voter)
+  if(res == 2){ res<-10*which.max(voter[-2])}
+  return(res)
+})
+data.frame(rbind(
+  ES_UK_predictor=round(prop.table(table(factor(result_1,levels=c(1,10,20,3),labels=c("populist","swing populist","swing non-populist","non-populist")))),3),
+  ES_US_predictor=round(prop.table(table(factor(result_2, levels=c(1,10,20,3),labels=c("populist","swing populist","swing non-populist","non-populist")))),3)
+))
+```
+
+
+```{r}
+#IT Predictions
+###############
+
+data.frame(rbind(
+  IT_UK_predictor=round(prop.table(table(factor(apply(predict(overall_fwd_step_UK,newdata=IT_set,type='probs'),1, function(x) which.max(x)),labels=c('populist','no vote','non-populist')))),3),
+  IT_US_predictor=round(prop.table(table(factor(apply(na.omit(predict(overall_fwd_step_US,newdata=IT_set,type='probs')),1, function(x) which.max(x)),labels=c('populist','no vote','non-populist')))),3)
+))
+
+
+#swing populist and swing non-populist
+
+result_1<-apply(predict(overall_fwd_step_UK,newdata=IT_set,type='probs'), 1,function(voter) {
+  res<-which.max(voter)
+  if(res == 2){ res<-10*which.max(voter[-2])}
+  return(res)
+})
+result_2<-apply(na.omit(predict(overall_fwd_step_US,newdata=IT_set,type='probs')), 1,function(voter) {
+  res<-which.max(voter)
+  if(res == 2){ res<-10*which.max(voter[-2])}
+  return(res)
+})
+data.frame(rbind(
+  IT_UK_predictor=round(prop.table(table(factor(result_1,levels=c(1,10,20,3),labels=c("populist","swing populist","swing non-populist","non-populist")))),3),
+  IT_US_predictor=round(prop.table(table(factor(result_2, levels=c(1,10,20,3),labels=c("populist","swing populist","swing non-populist","non-populist")))),3)
+))
+```
+
+
+**End of Step 5**
+  
+  
+  
+**Step 6: Classification Tree Models**
+  
+```{r}  
+  #Tree Model for US set:
+  
+  library(rpart)
+
+overall_US_tree<-rpart(vote_for_in_us_election~., data=US_set_5c,control=rpart.control(cp=0,minsplit=30,xval=10, maxsurrogate=0))
+overall_UK_tree<-rpart(vote_referendum~., data=UK_set_5c,control=rpart.control(cp=0,minsplit=30,xval=10, maxsurrogate=0))
+```
+
+```{r}
+round(prop.table(table(predict_UK_ref=predict(overall_US_tree, newdata = UK_set_5c, type='class'), actual=UK_set_5c$vote_referendum),2),3)
+```
+
+```{r}
+round(prop.table(table(predict_US_elec=predict(overall_UK_tree, newdata = US_set_5c, type='class'), actual=US_set_5c$vote_for_in_us_election),2),3)
+```
+
+```{r}
+printcp(overall_US_tree)
+```
+
+```{r}
+plotcp(overall_US_tree)
+```
+
+
+```{r}
+pruned_overall_US_tree<-rpart(vote_for_in_us_election~., data=US_set_5c,control=rpart.control(cp=0.0104330,minsplit=30,xval=10, maxsurrogate=0))
+```
+
+```{r}
+rpart.plot::prp(pruned_overall_US_tree,2,cex=1.3,varlen=0, faclen=0,facsep ="\n", compress=TRUE, leaf.round=1, fallen.leaves = FALSE,type=3,box.palette = 'auto' )
+```
+
+```{r}
+snip_right<-rpart::snip.rpart(pruned_overall_US_tree,3)
+snip_left<-rpart::snip.rpart(pruned_overall_US_tree,2)
+```
+
+```{r}
+rpart.plot::prp(snip_right,2,cex=1.3,varlen=0, faclen=0,facsep ="\n", compress=TRUE, leaf.round=1, fallen.leaves = FALSE,type=3,box.palette = 'auto' )
+```
+
+```{r}
+rpart.plot::prp(snip_left,2,cex=1.3,varlen=0, faclen=0,facsep ="\n", compress=TRUE, leaf.round=1, fallen.leaves = FALSE,type=3,box.palette = 'auto' )
+```
+
+
+```{r}
+printcp(overall_UK_tree)
+```
+
+```{r}
+plotcp(overall_UK_tree)
+```
+
+```{r}
+pruned_overall_UK_tree<-rpart(vote_referendum~., data=UK_set_5c,control=rpart.control(cp=0.01158537,minsplit=30,xval=10, maxsurrogate=0))
+```
+
+```{r}
+rpart.plot::prp(pruned_overall_UK_tree,2,cex=1.3,varlen=0, faclen=0,facsep ="\n", compress=TRUE, leaf.round=1, fallen.leaves = FALSE, type=3, box.palette = 'auto' )
+```
+
+```{r}
+snip_right_UK<-rpart::snip.rpart(pruned_overall_UK_tree,3)
+snip_left_UK<-rpart::snip.rpart(pruned_overall_UK_tree,2)
+snip_left_UK_a<-rpart::snip.rpart(pruned_overall_UK_tree,6)
+snip_left_UK_b<-rpart::snip.rpart(pruned_overall_UK_tree,7)
+```
+
+```{r}
+rpart.plot::prp(snip_right_UK,2,cex=1.3,varlen=0, faclen=0,facsep ="\n", compress=TRUE, leaf.round=1, fallen.leaves = FALSE, type=3, box.palette = 'auto' )
+```
+
+```{r}
+rpart.plot::prp(snip_left_UK_a,2,cex=1.3,varlen=0, faclen=0,facsep ="\n", compress=TRUE, leaf.round=1, fallen.leaves = FALSE, type=3, box.palette = 'auto' )
+```
+
+```{r}
+rpart.plot::prp(snip_left_UK_b,2,cex=1.3,varlen=0, faclen=0,facsep ="\n", compress=TRUE, leaf.round=1, fallen.leaves = FALSE, type=3, box.palette = 'auto' )
+```
+
+
+
+
+
+```{r,eval=FALSE,echo=FALSE}
+US tree training/holdout validation for 10 different samples
+############################################################
+
+US_t_tree_sets<-vector('list',length=10)
+US_t_tree_predicted_sets<-vector('list',length=10)
+US_h_tree_predicted_sets<-vector('list',length=10)
+
+for (i in 1:10){
+  US_training_tree<-rpart(vote_for_in_us_election~., data=US_t_sets[[i]],control=rpart.control(cp=0,minsplit=30,xval=10, maxsurrogate=0))
+  
+  US_training_predicted<-predict(US_training_tree, type='class')
+  US_holdout_predicted<-predict(US_training_tree, newdata=US_h_sets[[i]], type='class')
+  
+  US_t_tree_sets[[i]]<-US_training_tree
+  US_t_tree_predicted_sets[[i]]<-US_training_predicted
+  US_h_tree_predicted_sets[[i]]<-US_holdout_predicted
+}
+saveRDS(US_t_tree_sets, paste(save_Path,'US_t_tree_sets.rds',sep='/'))
+saveRDS(US_t_tree_predicted_sets, paste(save_Path,'US_t_tree_predicted_sets',sep='/'))
+saveRDS(US_h_tree_predicted_sets,paste(save_Path,'US_h_tree_predicted_sets',sep='/'))
+
+
+
+for (i in 1:10){
+  print(round(prop.table(table(predicted_t=US_t_tree_predicted_sets[[i]],actual=US_t_sets[[i]]$vote_for_in_us_election),2),3))
+  print(round(prop.table(table(predicted_h=US_h_tree_predicted_sets[[i]],actual=US_h_sets[[i]]$vote_for_in_us_election),2),3))
+}
+
+
+
+UK tree training/holdout validation for 10 different samples
+############################################################
+
+UK_t_tree_sets<-vector('list',length=10)
+UK_t_tree_predicted_sets<-vector('list',length=10)
+UK_h_tree_predicted_sets<-vector('list',length=10)
+
+for (i in 1:10){
+  UK_training_tree<-rpart(vote_referendum~., data=UK_t_sets[[i]],control=rpart.control(cp=0,minsplit=30,xval=10, maxsurrogate=0))
+  
+  UK_training_predicted<-predict(UK_training_tree, type='class')
+  UK_holdout_predicted<-predict(UK_training_tree, newdata=UK_h_sets[[i]], type='class')
+  
+  UK_t_tree_sets[[i]]<-UK_training_tree
+  UK_t_tree_predicted_sets[[i]]<-UK_training_predicted
+  UK_h_tree_predicted_sets[[i]]<-UK_holdout_predicted
+}
+saveRDS(UK_t_tree_sets, paste(save_Path,'UK_t_tree_sets.rds',sep='/'))
+saveRDS(UK_t_tree_predicted_sets, paste(save_Path,'UK_t_tree_predicted_sets',sep='/'))
+saveRDS(UK_h_tree_predicted_sets,paste(save_Path,'UK_h_tree_predicted_sets',sep='/'))
+
+
+
+for (i in 1:10){
+  print(round(prop.table(table(predicted_t=UK_t_tree_predicted_sets[[i]],actual=UK_t_sets[[i]]$vote_referendum),2),3))
+  print(round(prop.table(table(predicted_h=UK_h_tree_predicted_sets[[i]],actual=UK_h_sets[[i]]$vote_referendum),2),3))
+}
+
+
+
+
+overall_UK_training_tree<-rpart(vote_referendum~., data=UK_t_sets[[i]],control=rpart.control(cp=0,minsplit=30,xval=10, maxsurrogate=0))
+UK_training_tree<-rpart(vote_referendum~., data=UK_t_sets[[i]],control=rpart.control(cp=0,minsplit=30,xval=10, maxsurrogate=0))
+```
+
+
+
+
+
+

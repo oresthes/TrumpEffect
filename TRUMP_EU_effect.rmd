@@ -4,11 +4,11 @@ subtitle: "A transatlantic Prediction Model"
 geometry: margins=0.3in
 ---
 
-**Step 1: Data Homogenization**
+Step 1: Data Homogenization
 
 Summary:
-  The code in this file will take the raw datasets of EU (90 variables) and US (68 variables) and do the following:
-  1- Remove the column name prefixes (X.meta.., X.dem.. X.question.. etc)
+The code in this file will take the raw datasets of EU (90 variables) and US (68 variables) and do the following:
+1- Remove the column name prefixes (X.meta.., X.dem.. X.question.. etc)
 2- investigate the common variables between the EU_set and US_set. 
 3- modify any discrepancies in column names that refer to the same variable (only 1 case: ethnicity). 
 4- isolate -into a new dataset- the variables from EU dataset that are not common with the US (those are per country per party specific question). 
@@ -19,12 +19,13 @@ Summary:
 9- finally we subset the datasets by observations that claim citizenship or who can vote. Those are the observations that matter and they constitute the majority.
 10- `voter_US_set.csv`, `voter_UK_set.csv` and `voter_EU_set.csv` are subsets of the `US_set.csv`, `UK_set.csv` and `EU_set.csv` where all observtions (individuals) are residents. Those are the people who voted or can vote.   
 ------------------------------------------------------------------------------------------------------
-  The final EU_set is 67 columns wide.  
+The final EU_set is 67 columns wide.  
 The final US_set is 68 columns wide.   
 The `US_set` has one extra variable `vote_for_in_us_election` which serves as the response.  
 The `UK_set` has one extra variable `vote_referrendum` which is specific for the UK.   
 All other 67 columns are shared between the two sets.   
 ------------------------------------------------------------------------------------------------------
+  
   
 
 ```{r}  
